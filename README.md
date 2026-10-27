@@ -1,97 +1,91 @@
-# Log Pose — One Piece companion
+# Log Pose — a One Piece voyage
 
-A beginner-friendly C++17 backend with a browser interface. Look up an episode recap, ask about One Piece, and set the last episode you have finished to keep later catalog facts out of responses.
+A C++17 web app with a pirate-styled browser interface: parchment, ocean blue, straw-hat gold, locally bundled pirate fonts, a straw-hat emblem, a skull flag, and nautical symbols. These decorative vectors are original fan-project graphics, not official episode stills.
 
-**This is a working starter, not a complete One Piece database.** It includes original, manually written notes for anime episodes **1–3**. No external episode feed, official episode photos, or IMDb integration is bundled. It is an unofficial fan project.
+## What it does
 
-## Run it
+- **Episode lookups 1–1156.** Original notes for episodes 1–3 work offline. Other numbers fetch their individual episode synopsis from the [Jikan API](https://docs.api.jikan.moe/) (MyAnimeList anime ID 21), then cache it locally. No API key is needed for episode lookups.
+- **A watched-episode boundary.** The C++ server refuses recaps above the last episode you say you have finished, before making an external request. Titles and summaries are not preloaded for future episodes.
+- **Episode chat.** Open a recap first. The assistant can select only text from that episode, not later episodes or movies.
+- **A separate Movie Den.** All 15 theatrical One Piece movies have original, three-section plot overviews, including their endings. Each has a conservative anime-context threshold and a separate “I’ve finished this movie” confirmation.
+- **Independent movie chat.** Only the selected, confirmed movie’s notes enter this conversation. Changing movies, unchecking confirmation, or changing the watched limit clears old content and invalidates late replies.
+- **Works without ChatGPT.** A labeled keyword-based local helper selects existing notes. Optional OpenAI integration improves selection without displaying free-form model prose.
 
-Prerequisites: Linux, a C++17 compiler, GNU Make, pkg-config, libcurl development headers. Python 3 is used only for tests. These are available in the prepared cloud environment. On Debian/Ubuntu, the corresponding packages are `g++ make pkg-config libcurl4-openssl-dev python3`.
+**Coverage limitation:** accepting every number from 1–1156 is not a promise that MyAnimeList has a synopsis for every episode. Descriptions can be missing; Jikan can be offline or rate-limited. The app explicitly reports missing or unavailable recaps and never invents replacements. Live episode-provider access was blocked by the cloud network during development. The parser and HTTP routes were tested with synthetic fixtures, including episode 1156; comprehensive live coverage has not been audited.
 
-From this repository's directory:
-
-```sh
-make
-make run
-```
-
-On your own computer, open a browser at `http://127.0.0.1:8080`. The server binds only to your machine's loopback interface. Cloud onboarding does not provide a browser preview; the API can still be checked with local requests. Stop with Ctrl+C. Change the local port with `PORT=8081 make run`.
-
-1. Set **Last episode finished**. It starts at **0**; nothing is unlocked automatically.
-2. Enter an episode number at or below your limit and click **Read recap**.
-3. Ask a question such as “What is Luffy's dream?”
-
-Recaps contain events from the requested episode, so only mark an episode finished **after watching it**. The app cannot know what you have actually watched. Questions you type may themselves contain spoilers. Lowering the limit clears visible recaps and conversation; late replies from the old limit are discarded. Nothing is stored in browser storage.
+**Spoilers:** recaps include events from the requested episode. Movie overviews include endings. Only unlock things you have actually finished. External episode descriptions are not independently spoiler-audited and may include retrospective context. Movie viewing thresholds are cautious recommendations, not an official timeline or an absolute spoiler guarantee. The app prevents crossing its stored boundaries; the accuracy and wording of source material still matter.
 
 ## Run on a Mac with Brave
 
-All commands go in the **Terminal** app, not Brave. Press the Return/Enter key after each command.
+All commands below go in **Terminal**, not Brave. Press Return/Enter after each command.
 
-1. Install Apple’s command-line tools with `xcode-select --install`. Finish the installer before continuing. If already installed, continue.
-2. Install Homebrew using the instructions at https://brew.sh, including its displayed shell setup steps.
-3. In Terminal, run `brew install pkg-config curl`.
-4. Download this repository using GitHub’s **Code → Download ZIP**, then double-click the ZIP in Finder to extract it.
-5. In Terminal, type `cd ` (including the space), drag the extracted project folder from Finder into Terminal, then press Return. This works even if the extracted folder has `-main` in its name.
-6. Run `export PKG_CONFIG_PATH="$(brew --prefix curl)/lib/pkgconfig"`.
-7. Run `make run` and keep Terminal open.
-8. In **Brave’s address bar**, enter `http://127.0.0.1:8080`.
+1. Install Apple’s tools with `xcode-select --install`. If already installed, continue.
+2. Install Homebrew using https://brew.sh and complete the shell setup commands it displays.
+3. Run `brew install pkg-config curl`.
+4. Download this repository with GitHub’s **Code → Download ZIP**. Double-click the ZIP in Finder to extract it.
+5. In Terminal, type `cd ` with the space, drag the extracted folder into Terminal, then press Return.
+6. Run `make run` and keep Terminal open.
+7. In **Brave**, press **Command+L**, enter `http://127.0.0.1:8080`, and press Return.
 
-Press Control+C in Terminal to stop. For subsequent starts, open Terminal and repeat steps 5–8. No API key is needed for the local helper.
+The Makefile automatically selects Apple’s compiler, Homebrew curl, and an installed SDK matching the macOS major version when available. This avoids choosing an incompatible macOS 27 SDK on a macOS 26 machine. If automatic SDK selection fails on the Mac used during development, the verified workaround was:
 
-## Optional ChatGPT-powered selection
-
-Without an API key, the app uses an explicitly labeled local keyword-based fact helper. It can answer only a small set of questions and refuses unrelated or unsupported requests. This mode is limited and is not ChatGPT.
-
-To connect the OpenAI Responses API, provide an API key securely as the `ONE_PIECE_API_KEY` environment variable before starting. `OPENAI_API_KEY` is also recognized on your own machine. Never paste the key into chat, source files, frontend JavaScript, or a committed file. `.env` is ignored by Git but is **not automatically loaded**. An existing ChatGPT subscription does not include API billing.
-
-`ONE_PIECE_MODEL` optionally overrides the default `gpt-4.1-mini`; the chosen model must support Responses API structured JSON output. The network must permit HTTPS to `api.openai.com`. The UI indicates that AI is configured, not that a live call has succeeded. A failed call falls back to the local helper with a visible notice. API calls send the current question and unlocked catalog notes, not previous conversation. API usage may cost money. The app requests `store: false`; consult your API account's data policies.
-
-### How spoiler protection works
-
-A prompt alone is insufficient to guarantee spoiler-free model prose. This app instead:
-
-- Filters the catalog **on the C++ server** using the watched limit on every request.
-- Sends only unlocked facts to the API, never the whole catalog.
-- Requires the model to return fact IDs, not a freely written answer.
-- Validates those IDs against the filtered catalog and renders only stored text.
-- Uses fixed refusal text if no supported answer exists. Future-looking questions receive a fixed protective refusal.
-- Serves neither the raw catalog nor source files to the browser.
-
-This prevents a model from introducing future-story prose into displayed answers. It does **not** verify the accuracy or episode assignment of manually edited catalog entries: incorrect catalog facts can still spoil the story. The local keyword helper can match an irrelevant fact, and an AI selector can choose an irrelevant unlocked fact. No general chatbot or fully reliable intent classifier is claimed. The companion is a single-question fact assistant, not a conversation-memory system.
-
-This is a local personal app, not an authenticated public service. Do not expose it publicly with an API key without adding authentication, rate limiting, and usage limits.
-
-## Real episode images
-
-No generated pictures or substitute series posters are used. The starter displays an honest empty state because a reusable, episode-specific photo source has not been verified. Official episode page retrieval was blocked in the setup environment. IMDb and official sites do not automatically grant image reuse rights; do not scrape or hotlink without permission.
-
-After obtaining permission or an appropriate license, add a real photo **from that episode** to its `images` array in `data/episodes.json`:
-
-```json
-{
-  "url": "https://your-permitted-image-host.example/episode-1.jpg",
-  "source_url": "https://your-source.example/episode-1",
-  "credit": "Actual copyright holder / photographer",
-  "permission": "Actual license or permission reference",
-  "alt": "Describe this episode image without future-story information"
-}
+```sh
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk make CXX="$(xcrun --find clang++)" run
 ```
 
-These are placeholders showing the format, not working image URLs or permission claims. Replace every field with verified information. Images must use HTTPS. They appear only when the episode is unlocked. Image hosts see ordinary browser image requests; no API key is sent to them. Inspect the image, caption, source URL, and license yourself before adding it. Restart after editing data.
+That exact workaround requires the named SDK to exist; it is not a universal setting for other Macs. The updated Makefile’s macOS branch has not been executed on a Mac in the cloud workspace.
 
-## Add episodes
+To stop, press **Control+C** in Terminal. Later, open Terminal, enter the project folder, and run `make run` again.
 
-`data/episodes.json` is deliberately small and readable. Each entry has a positive unique `number`, a `summary`, `facts`, and `images`. Each fact needs a unique `id`, lowercase `keywords`, and `text`. Write original summaries and facts based only on that episode and earlier. Do not copy scripts or full third-party summaries. Check that recaps, facts, and images contain no later revelations. The app loads the catalog at startup and rejects malformed entries. No AI is used to invent missing episode summaries.
+### Get this update if you downloaded an earlier ZIP
 
-## Understand the code
+Stop the old server with Control+C, download the new ZIP from GitHub, and extract it into a **new folder**. Do not merge it into or overwrite a folder containing your own changes or keys. Enter the new folder in Terminal and run `make run`. Refresh Brave. Browser settings are intentionally not persisted, so set your watched limit again.
 
-- `src/main.cpp`: HTTP routes, watched-limit checks, catalog loading, local matching, OpenAI integration.
-- `web/index.html`, `style.css`, `app.js`: accessible browser UI; messages use text nodes instead of HTML insertion.
-- `data/episodes.json`: local, editable episode notes.
-- `tests/smoke.py`: real HTTP regression tests, including spoiler boundaries and invalid input.
-- `vendor/`: pinned header-only dependencies and their licenses; see `vendor/README.md`.
+## Run on Linux / the prepared cloud environment
 
-The browser asks the C++ backend for data. C++ handles JSON using nlohmann/json, serves HTTP using cpp-httplib, and calls the API using libcurl with TLS verification enabled. You do not need CMake or a JavaScript package manager.
+Prerequisites: a C++17 compiler, GNU Make, pkg-config, libcurl development headers; Python 3 for tests. Debian/Ubuntu packages: `g++ make pkg-config libcurl4-openssl-dev python3`.
+
+```sh
+make -j2
+make run
+```
+
+Run from the repository root. The app binds **only to 127.0.0.1**, default port 8080. Change it with `PORT=8081 make run`. The cloud onboarding interface has no browser preview; local requests and browser automation can validate the server internally.
+
+## Optional ChatGPT selection
+
+Set `ONE_PIECE_API_KEY` securely in the environment before starting. On your own machine, `OPENAI_API_KEY` is also accepted. `.env` files are ignored by Git but **not automatically loaded**. Never commit real keys or put them in frontend JavaScript. A ChatGPT subscription does not include API billing.
+
+`ONE_PIECE_MODEL` defaults to `gpt-4.1-mini`; another model must support the OpenAI Responses API with structured JSON output. The app sends only the current question and selected episode/movie notes, not conversation history. It requests `store: false`; consult your API account’s data policies. Live calls were not tested without a credential. A failed call falls back to the local helper with a notice.
+
+The model returns **fact IDs**, not an unrestricted answer. C++ validates the IDs against the selected episode or movie and renders only stored/source text. This prevents the model from generating future-story prose, but does not fact-check the underlying text. Local matching can choose an irrelevant paragraph. Neither mode is an unrestricted chatbot, a perfect intent classifier, or a conversation-memory system.
+
+This is a personal local application. Do not expose it publicly with an API key without authentication, rate limits, and spending controls.
+
+## Sources, network, and cache
+
+- Episode provider: `https://api.jikan.moe/v4/anime/21/episodes/{number}`. Only the requested, unlocked episode is fetched; titles/summaries from adjacent episodes are not fetched.
+- Attribution links lead to the relevant MyAnimeList episode page. Source text and embedded attribution are retained; no provider affiliation is claimed. Follow Jikan/MyAnimeList terms when using or redistributing source data.
+- Successful external responses are saved under `.cache/episodes/` (Git-ignored). Cached recaps work offline. Unsuccessful responses are not cached.
+- Upstream requests are serialized and spaced at least 1.1 seconds apart. A rate-limit response asks the user to wait instead of automatically retrying.
+- Movie overviews are original prose in `data/movies.json`, with Wikipedia links for further reading. They have not been independently fact-checked against a live movie database. Specials, OVAs, and the live-action series are not included.
+- Network destinations: `api.jikan.moe` for recaps; `api.openai.com` only for optional AI. Fonts and decorative artwork are served locally. MyAnimeList/Wikipedia links open only if clicked.
+
+`ONE_PIECE_CACHE_DIR` optionally overrides the cache directory. Delete cached episode files to refresh their source descriptions. Browser history/limits are not saved. `ONE_PIECE_EPISODE_FIXTURES` is a test-only operator setting selecting local synthetic source files; leave it unset for real recaps.
+
+## Real episode photos
+
+No generated episode images or unrelated series posters are substituted for real episode stills. No verified/reusable photo source is bundled. Original entries in `data/episodes.json` still support an `images` array, with `url`, `source_url`, `credit`, `permission`, and `alt` fields. Use HTTPS and obtain the needed permission/license. Source availability on IMDb or an official site is not itself permission to reuse an image. Images appear only inside an unlocked recap. External Jikan episode descriptions do not supply episode photos.
+
+## Project map
+
+- `src/main.cpp`: C++ HTTP routes, spoiler boundaries, source adapter, cache, local and optional AI selection.
+- `web/`: HTML, CSS, JavaScript, original decorative SVG symbols, local OFL-licensed fonts.
+- `data/episodes.json`: original offline notes for episodes 1–3.
+- `data/movies.json`: 15 movie overviews and viewing thresholds.
+- `tests/smoke.py`: real HTTP tests with synthetic episode-provider responses, no API credits or internet required.
+- `tests/browser_smoke.py`: optional Playwright/Chromium checks for both panels, font loading, spoiler boundaries, stale replies, movie isolation, and responsive layouts.
+- `vendor/`: pinned nlohmann/json and cpp-httplib headers and licenses. See `vendor/README.md`.
 
 ## Validate
 
@@ -99,8 +93,10 @@ The browser asks the C++ backend for data. C++ handles JSON using nlohmann/json,
 make test
 ```
 
-Tests start their own server on a temporary local port with API credentials removed from that child process. They do not call OpenAI or spend API credits. Live AI calls require your own configured credential and have not been validated in this environment.
+With Python Playwright and Chromium installed, also run:
 
-Optional browser checks are also provided. With Python Playwright and Chromium available, run `python3 tests/browser_smoke.py`. These exercise recaps, chat, off-topic refusal, clearing content after lowering the watched limit, and mobile overflow. They also run without API credentials.
+```sh
+python3 tests/browser_smoke.py
+```
 
-For this cloud environment, an optional `ONE_PIECE_API_KEY` secret requirement and the `api.openai.com` destination have been saved in the environment draft. Add your own key securely in environment settings, review/save the draft, and publish to retain the prepared environment. Draft saving alone does not configure the running process or verify a live API call.
+Test child processes remove API credentials and point at `tests/fixtures/episodes`. Those files are **clearly labeled synthetic data, not actual episode recaps**. Tests exercise the valid range, every future-number gate, all 15 movie gates, source mismatch/null/malformed cases, off-topic requests, and chat isolation. They do not establish live synopsis coverage or movie-plot accuracy.

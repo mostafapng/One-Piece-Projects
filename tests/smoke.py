@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import subprocess
 import time
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -23,6 +24,7 @@ class CompanionTests(unittest.TestCase):
         environment.pop('ONE_PIECE_API_KEY', None)
         environment.pop('OPENAI_API_KEY', None)
         environment['PORT'] = str(port)
+        environment['ONE_PIECE_EPISODE_FIXTURES'] = str(ROOT / 'tests/fixtures/episodes')
         cls.process = subprocess.Popen([str(ROOT / 'build/one-piece')], cwd=ROOT, env=environment,
                                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         for _ in range(100):
@@ -70,7 +72,9 @@ class CompanionTests(unittest.TestCase):
     def test_status_exposes_no_episode_text(self):
         with urllib.request.urlopen(self.base + '/api/status') as response:
             data = json.load(response)
-        self.assertEqual(data['episodes'], [1, 2, 3])
+        self.assertEqual(data['episode_min'], 1)
+        self.assertEqual(data['episode_max'], 1156)
+        self.assertEqual(data['offline_episodes'], [1, 2, 3])
         self.assertFalse(data['ai_configured'])
         self.assertNotIn('summary', data)
 
@@ -132,10 +136,109 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(self.post('/api/chat', '{invalid', raw=True)[0], 400)
         self.assertEqual(self.post('/api/chat', {'question': ['hello'], 'watched': 1})[0], 400)
 
-    def test_missing_episode_is_explicit(self):
-        status, data = self.post('/api/episode', {'episode': 100, 'watched': 100})
-        self.assertEqual(status, 404)
-        self.assertNotIn('summary', data)
+    def test_episode_range_and_source_adapter(self):
+        for n in [4, 100, 1156]:
+            status, data = self.post('/api/episode', {'episode': n, 'watched': n})
+            self.assertEqual(status, 200)
+            self.assertEqual(data['number'], n)
+            self.assertIn('SYNTHETIC TEST NOTE', data['summary'])
+            self.assertEqual(data['source'], 'MyAnimeList via Jikan')
+            self.assertTrue(data['external'])
+        self.assertEqual(self.post('/api/episode', {'episode': 1157, 'watched': 1156})[0], 400)
+
+    def test_source_failure_never_invents_recap(self):
+        for n in [499, 500, 501, 502]:
+            status, data = self.post('/api/episode', {'episode': n, 'watched': n})
+            self.assertEqual(status, 503)
+            self.assertNotIn('summary', data)
+            self.assertNotIn('WRONG_EPISODE_SECRET', json.dumps(data))
+
+    def test_all_future_numbers_are_blocked_before_source_lookup(self):
+        for n in range(2, 1157):
+            status, data = self.post('/api/episode', {'episode': n, 'watched': 1})
+            self.assertEqual(status, 403, n)
+            self.assertNotIn('summary', data)
+
+    def test_selected_episode_chat_is_scoped(self):
+        status, data = self.post('/api/chat', {'episode': 100, 'watched': 100, 'question': 'What does Luffy explore?'})
+        self.assertEqual(status, 200)
+        self.assertTrue(data['sources'])
+        self.assertTrue(all(source['episode'] == 100 for source in data['sources']))
+        self.assertNotIn('Alvida', data['answer'])
+        self.assertEqual(self.post('/api/chat', {'episode': 100, 'watched': 1, 'question': 'Luffy'})[0], 403)
+
+    def test_movie_listing_hides_plots(self):
+        with urllib.request.urlopen(self.base + '/api/movies') as response:
+            data = json.load(response)
+        self.assertEqual(len(data['movies']), 15)
+        self.assertEqual([m['id'] for m in data['movies']], list(range(1, 16)))
+        self.assertNotIn('sections', json.dumps(data))
+        self.assertNotIn('summary', json.dumps(data))
+
+    def test_all_movies_require_confirmation_and_anime_threshold(self):
+        for movie in json.loads((ROOT / 'data/movies.json').read_text()):
+            n = movie['id']
+            base = {'movie': n, 'watched': 1156, 'movie_watched': False}
+            self.assertEqual(self.post('/api/movie', base)[0], 403)
+            self.assertEqual(self.post('/api/movie-chat', {**base, 'question': 'summary'})[0], 403)
+            base.update(movie_watched=True, watched=movie['minimum_episode'] - 1)
+            self.assertEqual(self.post('/api/movie', base)[0], 403)
+            self.assertEqual(self.post('/api/movie-chat', {**base, 'question': 'summary'})[0], 403)
+            base['watched'] += 1
+            status, data = self.post('/api/movie', base)
+            self.assertEqual(status, 200)
+            self.assertEqual(data['id'], n)
+            self.assertEqual(len(data['sections']), 3)
+            self.assertGreater(sum(len(s['text'].split()) for s in data['sections']), 140)
+
+    def test_movie_chat_stays_in_its_movie(self):
+        base = {'movie': 10, 'watched': 1156, 'movie_watched': True}
+        status, data = self.post('/api/movie-chat', {**base, 'question': 'Give me a detailed summary'})
+        self.assertEqual(status, 200)
+        self.assertIn('Shiki', data['answer'])
+        self.assertNotIn('Uta', data['answer'])
+        self.assertEqual(data['sources'], [{'movie': 10}])
+        status, data = self.post('/api/movie-chat', {**base, 'question': 'Tell me about Shiki'})
+        self.assertEqual(status, 200)
+        self.assertTrue(all(source['movie'] == 10 for source in data['sources']))
+        self.assertEqual(self.post('/api/movie-chat', {**base, 'question': 'What is the weather?'})[1]['answer'],
+                         "I'm built to help with One Piece. Please ask a One Piece-related question.")
+        self.assertIn("I'm built to help with One Piece", self.post('/api/movie-chat', {**base, 'question': 'Give me a summary of Naruto'})[1]['answer'])
+        self.assertEqual(self.post('/api/movie', {**base, 'movie_watched': 'true'})[0], 403)
+        self.assertEqual(self.post('/api/movie', {**base, 'movie': 16})[0], 404)
+
+    def test_persisted_cache_works_without_network(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cached = json.loads((ROOT / 'tests/fixtures/episodes/100.json').read_text())
+            Path(folder, '100.json').write_text(json.dumps(cached))
+            with socket.socket() as sock:
+                sock.bind(('127.0.0.1', 0))
+                port = sock.getsockname()[1]
+            environment = os.environ.copy()
+            for name in ['ONE_PIECE_API_KEY', 'OPENAI_API_KEY', 'ONE_PIECE_EPISODE_FIXTURES']:
+                environment.pop(name, None)
+            environment.update(PORT=str(port), ONE_PIECE_CACHE_DIR=folder)
+            process = subprocess.Popen([str(ROOT / 'build/one-piece')], cwd=ROOT, env=environment,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(100):
+                    if process.poll() is not None:
+                        self.fail('Cache test server exited')
+                    try:
+                        urllib.request.urlopen(f'http://127.0.0.1:{port}/api/status', timeout=1).close()
+                        break
+                    except OSError:
+                        time.sleep(.05)
+                request = urllib.request.Request(f'http://127.0.0.1:{port}/api/episode',
+                    data=json.dumps({'episode': 100, 'watched': 100}).encode(),
+                    headers={'Content-Type': 'application/json'})
+                with urllib.request.urlopen(request, timeout=3) as response:
+                    data = json.load(response)
+                self.assertTrue(data['cached'])
+                self.assertIn('SYNTHETIC TEST NOTE', data['summary'])
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
 
     def test_cross_origin_request_rejected(self):
         status, _ = self.post('/api/chat', {'question': 'Luffy', 'watched': 1},
@@ -143,7 +246,7 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(status, 403)
 
     def test_catalog_not_public(self):
-        for path in ['/data/episodes.json', '/.env', '/src/main.cpp']:
+        for path in ['/data/episodes.json', '/data/movies.json', '/.env', '/src/main.cpp', '/.cache/episodes/1156.json', '/assets/../data/movies.json']:
             with self.assertRaises(urllib.error.HTTPError) as error:
                 urllib.request.urlopen(self.base + path)
             self.assertEqual(error.exception.code, 404)

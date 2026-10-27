@@ -3,6 +3,10 @@
 #include <curl/curl.h>
 #include <algorithm>
 #include <cstdlib>
+#include <chrono>
+#include <filesystem>
+#include <mutex>
+#include <thread>
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -13,6 +17,7 @@
 using json = nlohmann::json;
 
 namespace {
+constexpr int last_episode = 1156;
 const std::string off_topic = "I'm built to help with One Piece. Please ask a One Piece-related question.";
 const std::string unknown = "I don't have a verified answer within your watched episodes. I'll stop here to protect you from spoilers.";
 
@@ -40,7 +45,7 @@ void reply(httplib::Response& res, const json& body, int status = 200) {
 int integer(const json& body, const char* name) {
     if (!body.contains(name) || !body[name].is_number_integer()) throw std::runtime_error("Use a whole episode number.");
     const auto n = body[name].get<long long>();
-    if (n < 0 || n > 100000) throw std::runtime_error("Episode number is out of range.");
+    if (n < 0 || n > last_episode) throw std::runtime_error("Episode number is out of range.");
     return static_cast<int>(n);
 }
 
@@ -102,12 +107,12 @@ json select_with_ai(const std::string& key, const std::string& question, const j
     throw std::runtime_error("No AI selection returned");
 }
 
-json answer(const std::string& question, const json& facts, const std::string& key) {
+json answer(const std::string& question, const json& facts, const std::string& key, const std::string& unknown_text = unknown) {
     const auto tokens = words(question);
     const auto has = [&](const char* token) { return tokens.count(token) != 0; };
     if (has("spoiler") || has("spoilers") || has("future") || has("later") || has("next") ||
         has("dies") || has("death") || has("eventually"))
-        return {{"answer", unknown}, {"mode", "protected"}, {"sources", json::array()}};
+        return {{"answer", unknown_text}, {"mode", "protected"}, {"sources", json::array()}};
     json selections = json::array();
     std::string mode = "local";
     bool relevant = has("one") && has("piece");
@@ -148,11 +153,12 @@ json answer(const std::string& question, const json& facts, const std::string& k
             if (fact.at("id") == id && used.insert(id.get<std::string>()).second) {
                 if (!text.empty()) text += "\n\n";
                 text += fact.at("text").get<std::string>();
-                sources.push_back({{"episode", fact.at("episode")}, {"fact_id", id}});
+                if (fact.contains("movie")) sources.push_back({{"movie", fact.at("movie")}, {"fact_id", id}});
+                else sources.push_back({{"episode", fact.at("episode")}, {"fact_id", id}});
             }
         }
     }
-    if (text.empty()) text = relevant ? unknown : off_topic;
+    if (text.empty()) text = relevant ? unknown_text : off_topic;
     return {{"answer", text}, {"mode", mode}, {"sources", sources}, {"fallback", fallback}};
 }
 
@@ -182,11 +188,125 @@ json load_catalog() {
     }
     return catalog;
 }
+
+// Remote content is fetched only AFTER the server checks the watched boundary.
+// Neither this cache nor the full catalogs are exposed as static files.
+class EpisodeLibrary {
+    json local;
+    std::mutex mutex;
+    std::chrono::steady_clock::time_point last_fetch{};
+    const std::string cache = variable("ONE_PIECE_CACHE_DIR", ".cache/episodes");
+    const std::string fixtures = variable("ONE_PIECE_EPISODE_FIXTURES");
+
+    json normalize(const json& envelope, int number) {
+        const auto& data = envelope.at("data");
+        if (!data.at("mal_id").is_number_integer() || data.at("mal_id").get<int>() != number)
+            throw std::runtime_error("Episode source returned a different episode; no details shown.");
+        if (!data.contains("synopsis") || !data["synopsis"].is_string() || data["synopsis"].get<std::string>().find_first_not_of(" \n\t\r") == std::string::npos)
+            throw std::runtime_error("The episode source has no recap for this episode yet. No summary has been invented.");
+        const std::string summary = data.at("synopsis").get<std::string>();
+        if (summary.size() > 30000) throw std::runtime_error("Episode description is unexpectedly large.");
+        return {{"number", number}, {"title", data.value("title", std::string("Episode ") + std::to_string(number))},
+                {"summary", summary}, {"images", json::array()}, {"source", "MyAnimeList via Jikan"},
+                {"source_url", "https://myanimelist.net/anime/21/One_Piece/episode/" + std::to_string(number)},
+                {"external", true}};
+    }
+public:
+    explicit EpisodeLibrary(json catalog) : local(std::move(catalog)) {}
+    json get(int number) {
+        for (const auto& episode : local) if (episode.at("number") == number) {
+            json result = episode;
+            result["source"] = "Log Pose · original episode notes";
+            result["source_url"] = "";
+            result["external"] = false;
+            return result;
+        }
+        std::lock_guard<std::mutex> lock(mutex);
+        if (!fixtures.empty()) {
+            // Test fixtures are selected only by an operator environment variable.
+            try { return normalize(json::parse(read_file(fixtures + "/" + std::to_string(number) + ".json")), number); }
+            catch (const std::exception& e) { throw std::runtime_error(std::string("Episode source unavailable: ") + e.what()); }
+        }
+        const auto path = std::filesystem::path(cache) / (std::to_string(number) + ".json");
+        if (std::filesystem::exists(path)) {
+            try { auto result = normalize(json::parse(read_file(path.string())), number); result["cached"] = true; return result; }
+            catch (const std::exception&) { /* Ignore corrupt cache; refetch using TLS. */ }
+        }
+        // Jikan permits 60 requests/minute. No bulk scraping or unchanged retries.
+        std::this_thread::sleep_until(last_fetch + std::chrono::milliseconds(1100));
+        last_fetch = std::chrono::steady_clock::now();
+        CURL* curl = curl_easy_init();
+        if (!curl) throw std::runtime_error("Episode source could not be initialized.");
+        std::string response;
+        const std::string url = "https://api.jikan.moe/v4/anime/21/episodes/" + std::to_string(number);
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, append_response);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 7L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 18L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "LogPose/2.0 personal episode companion");
+        const auto code = curl_easy_perform(curl);
+        long status = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+        curl_easy_cleanup(curl);
+        if (status == 429) throw std::runtime_error("The episode source is busy. Please wait a minute before trying again.");
+        if (code != CURLE_OK || status != 200) throw std::runtime_error("Could not reach the episode source. Check your internet connection and try again. Previously cached recaps still work.");
+        json envelope;
+        json result;
+        try { envelope = json::parse(response); result = normalize(envelope, number); }
+        catch (const json::exception&) { throw std::runtime_error("The episode source returned an invalid response. No details shown."); }
+        // Cache failures do not discard an otherwise valid recap.
+        std::error_code error;
+        std::filesystem::create_directories(cache, error);
+        if (!error) { std::ofstream file(path); if (file) file << envelope.dump(); }
+        result["cached"] = false;
+        return result;
+    }
+};
+
+json recap_facts(const json& episode) {
+    json facts = json::array();
+    const int n = episode.at("number");
+    const auto text = episode.at("summary").get<std::string>();
+    std::istringstream paragraphs(text);
+    std::string line;
+    int index = 0;
+    while (std::getline(paragraphs, line)) {
+        if (line.find_first_not_of(" \r\t") == std::string::npos) continue;
+        json keywords = json::array();
+        const std::set<std::string> stop = {"the", "and", "that", "this", "with", "from", "they", "their", "have", "when", "into", "while", "after", "what", "where", "then", "them", "been", "will", "there", "which", "about", "does", "only", "also", "some"};
+        for (const auto& word : words(line)) if (word.size() > 3 && !stop.count(word)) keywords.push_back(word);
+        facts.push_back({{"id", "e" + std::to_string(n) + "-recap-" + std::to_string(index++)},
+                         {"text", line}, {"keywords", keywords}, {"episode", n}});
+    }
+    return facts;
+}
+
+json load_movies() {
+    const auto movies = json::parse(read_file("data/movies.json"));
+    if (!movies.is_array() || movies.size() != 15) throw std::runtime_error("Expected 15 theatrical movies.");
+    std::set<int> ids;
+    for (const auto& movie : movies) {
+        if (!ids.insert(integer(movie, "id")).second) throw std::runtime_error("Duplicate movie ID.");
+        integer(movie, "minimum_episode");
+        movie.at("title").get<std::string>();
+        movie.at("year").get<int>();
+        if (movie.at("sections").size() < 3) throw std::runtime_error("Movie needs a detailed summary.");
+        for (const auto& section : movie.at("sections")) {
+            section.at("heading").get<std::string>();
+            section.at("text").get<std::string>();
+        }
+    }
+    return movies;
+}
+
 } // namespace
 
 int main() {
     try {
         const json catalog = load_catalog();
+        EpisodeLibrary library(catalog);
+        const json movies = load_movies();
         const std::string key = variable("ONE_PIECE_API_KEY", variable("OPENAI_API_KEY"));
         const std::string port_text = variable("PORT", "8080");
         if (port_text.empty() || port_text.find_first_not_of("0123456789") != std::string::npos) throw std::runtime_error("PORT must be an integer.");
@@ -201,7 +321,7 @@ int main() {
             res.set_header("X-Frame-Options", "DENY");
             res.set_header("Cache-Control", "no-store");
             res.set_header("Referrer-Policy", "no-referrer");
-            res.set_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+            res.set_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' https: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
             // Browser POSTs must be same-origin. The local app is not an authenticated public service.
             if (req.method == "POST" && req.has_header("Origin")) {
                 const std::string origin = req.get_header_value("Origin");
@@ -213,9 +333,9 @@ int main() {
             return httplib::Server::HandlerResponse::Unhandled;
         });
         server.Get("/api/status", [&](const auto&, auto& res) {
-            json numbers = json::array();
-            for (const auto& episode : catalog) numbers.push_back(episode.at("number"));
-            reply(res, {{"episodes", numbers}, {"ai_configured", !key.empty()}, {"spoiler_policy", "Only curated facts through your last watched episode are returned."}});
+            reply(res, {{"episode_min", 1}, {"episode_max", last_episode}, {"offline_episodes", {1, 2, 3}},
+                        {"ai_configured", !key.empty()}, {"episode_source", "Jikan / MyAnimeList · internet required for uncached episodes"},
+                        {"spoiler_policy", "Episode recaps require a watched limit; movie summaries require separate confirmation."}});
         });
         server.Post("/api/episode", [&](const auto& req, auto& res) {
             try {
@@ -224,10 +344,8 @@ int main() {
                 const int requested = integer(body, "episode");
                 if (requested < 1) { reply(res, {{"error", "Choose an episode number of at least 1."}}, 400); return; }
                 if (requested > watched) { reply(res, {{"error", "That episode is beyond your watched limit. No details have been loaded."}}, 403); return; }
-                for (const auto& episode : catalog) if (episode.at("number") == requested) {
-                    reply(res, {{"number", requested}, {"summary", episode.at("summary")}, {"images", episode.at("images")}}); return;
-                }
-                reply(res, {{"error", "This starter catalog contains episodes 1–3 only. No episode details have been loaded."}}, 404);
+                try { reply(res, library.get(requested)); }
+                catch (const std::exception& error) { reply(res, {{"error", error.what()}}, 503); }
             } catch (const std::exception&) { reply(res, {{"error", "Send valid JSON with whole-number episode and watched values."}}, 400); }
         });
         server.Post("/api/chat", [&](const auto& req, auto& res) {
@@ -239,11 +357,71 @@ int main() {
                     reply(res, {{"error", "Ask a question using 1–1000 characters."}}, 400); return;
                 }
                 json facts = json::array();
-                for (const auto& episode : catalog) if (episode.at("number").get<int>() <= watched)
-                    for (auto fact : episode.at("facts")) { fact["episode"] = episode.at("number"); facts.push_back(fact); }
+                // Optional selected episode keeps the context focused and bounded.
+                if (body.contains("episode")) {
+                    const int episode = integer(body, "episode");
+                    if (episode < 1) { reply(res, {{"error", "Choose an episode first."}}, 400); return; }
+                    if (episode > watched) { reply(res, {{"error", "That episode is beyond your watched limit."}}, 403); return; }
+                    try { facts = recap_facts(library.get(episode)); }
+                    catch (const std::exception& error) { reply(res, {{"error", error.what()}}, 503); return; }
+                } else {
+                    for (const auto& episode : catalog) if (episode.at("number").get<int>() <= watched)
+                        for (auto fact : episode.at("facts")) { fact["episode"] = episode.at("number"); facts.push_back(fact); }
+                }
                 reply(res, answer(question, facts, key));
             } catch (const std::exception&) { reply(res, {{"error", "Send valid JSON with a whole-number watched limit and a text question."}}, 400); }
         });
+        server.Get("/api/movies", [&](const auto&, auto& res) {
+            json listing = json::array();
+            for (const auto& movie : movies) listing.push_back({{"id", movie.at("id")}, {"title", movie.at("title")},
+                {"year", movie.at("year")}, {"minimum_episode", movie.at("minimum_episode")}});
+            reply(res, {{"movies", listing}});
+        });
+        auto movie_handler = [&](const httplib::Request& req, httplib::Response& res, bool chat) {
+            try {
+                const auto body = json::parse(req.body);
+                const int id = integer(body, "movie");
+                const int watched = integer(body, "watched");
+                if (!body.contains("movie_watched") || !body["movie_watched"].is_boolean() || !body["movie_watched"].get<bool>()) {
+                    reply(res, {{"error", "Confirm you have finished this movie before opening its full summary or chat."}}, 403); return;
+                }
+                for (const auto& movie : movies) if (movie.at("id") == id) {
+                    if (watched < movie.at("minimum_episode").get<int>()) {
+                        reply(res, {{"error", "This movie is locked at your anime limit. It can reveal characters or abilities you have not reached yet."}}, 403); return;
+                    }
+                    if (!chat) { reply(res, movie); return; }
+                    const auto question = body.at("question").get<std::string>();
+                    if (question.empty() || question.size() > 1000 || words(question).empty()) {
+                        reply(res, {{"error", "Ask a movie question using 1–1000 characters."}}, 400); return;
+                    }
+                    json facts = json::array();
+                    int index = 0;
+                    for (const auto& section : movie.at("sections")) {
+                        const auto text = section.at("text").get<std::string>();
+                        json keywords = json::array();
+                        const std::set<std::string> stop = {"the", "and", "that", "this", "with", "from", "they", "their", "have", "when", "into", "while", "after", "what", "where", "then", "them", "been", "will", "there", "which", "about", "does", "only", "also", "some"};
+                        for (const auto& word : words(text)) if (word.size() > 3 && !stop.count(word)) keywords.push_back(word);
+                        facts.push_back({{"id", "m" + std::to_string(id) + "-" + std::to_string(index++)}, {"text", text},
+                                         {"keywords", keywords}, {"movie", id}});
+                    }
+                    const auto question_words = words(question);
+                    const std::set<std::string> summary_words = {"give", "me", "a", "the", "detailed", "summary", "recap", "of", "this", "movie", "film", "please", "full", "story", "can", "you", "summarize", "it"};
+                    const bool asks_for_summary = (question_words.count("summary") || question_words.count("recap") || question_words.count("summarize")) &&
+                        std::all_of(question_words.begin(), question_words.end(), [&](const auto& word) { return summary_words.count(word); });
+                    if (asks_for_summary) {
+                        std::string summary;
+                        for (const auto& section : movie.at("sections")) summary += section.at("text").get<std::string>() + "\n\n";
+                        reply(res, {{"answer", summary}, {"mode", "local"}, {"sources", {{{"movie", id}}}}});
+                    } else reply(res, answer(question, facts, key, "I do not have an answer in this movie’s notes. I will keep other movies and anime events out of this chat."));
+                    return;
+                }
+                reply(res, {{"error", "Choose a movie from the catalog."}}, 404);
+            } catch (const std::exception&) { reply(res, {{"error", "Send valid movie, watched, movie_watched, and question values."}}, 400); }
+        };
+        server.Post("/api/movie", [&](const auto& req, auto& res) { movie_handler(req, res, false); });
+        server.Post("/api/movie-chat", [&](const auto& req, auto& res) { movie_handler(req, res, true); });
+        // Only the intentionally public asset directory is mounted, never repository data.
+        if (!server.set_mount_point("/assets", "web")) throw std::runtime_error("Cannot mount web assets.");
         for (const auto& route : std::vector<std::pair<std::string, std::string>>{{"/", "index.html"}, {"/app.js", "app.js"}, {"/style.css", "style.css"}}) {
             const auto content = read_file("web/" + route.second);
             const std::string type = route.second == "app.js" ? "text/javascript" : route.second == "style.css" ? "text/css" : "text/html";
