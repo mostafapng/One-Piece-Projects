@@ -1,91 +1,100 @@
 # Log Pose — a One Piece voyage
 
-A C++17 web app with a pirate-styled browser interface: parchment, ocean blue, straw-hat gold, locally bundled pirate fonts, a straw-hat emblem, a skull flag, and nautical symbols. These decorative vectors are original fan-project graphics, not official episode stills.
+A C++17 web app with a pirate-styled interface, episode recaps, a separate movie companion, and watched-episode limits.
 
-## What it does
+## Every episode is included
 
-- **Episode lookups 1–1156.** Original notes for episodes 1–3 work offline. Other numbers fetch their individual episode synopsis from the [Jikan API](https://docs.api.jikan.moe/) (MyAnimeList anime ID 21), then cache it locally. No API key is needed for episode lookups.
-- **A watched-episode boundary.** The C++ server refuses recaps above the last episode you say you have finished, before making an external request. Titles and summaries are not preloaded for future episodes.
-- **Episode chat.** Open a recap first. The assistant can select only text from that episode, not later episodes or movies.
-- **A separate Movie Den.** All 15 theatrical One Piece movies have original, three-section plot overviews, including their endings. Each has a conservative anime-context threshold and a separate “I’ve finished this movie” confirmation.
-- **Independent movie chat.** Only the selected, confirmed movie’s notes enter this conversation. Changing movies, unchecking confirmation, or changing the watched limit clears old content and invalidates late replies.
-- **Works without ChatGPT.** A labeled keyword-based local helper selects existing notes. Optional OpenAI integration improves selection without displaying free-form model prose.
+**All 1,156 episode summaries are bundled with the app.** Recaps no longer call Jikan, require internet, need an API key, or rely on a previously populated cache. The server checks that every episode from 1 through 1156 is present exactly once and has a nonblank summary before starting.
 
-**Coverage limitation:** accepting every number from 1–1156 is not a promise that MyAnimeList has a synopsis for every episode. Descriptions can be missing; Jikan can be offline or rate-limited. The app explicitly reports missing or unavailable recaps and never invents replacements. Live episode-provider access was blocked by the cloud network during development. The parser and HTTP routes were tested with synthetic fixtures, including episode 1156; comprehensive live coverage has not been audited.
+Episodes 1–3 retain their original English notes. Episodes 4–1156 have English translations of Spanish episode synopses originally sourced from TMDB, with English titles from MyAnimeList. The pinned dataset, translation method, and attribution are documented in [data/SOURCES.md](data/SOURCES.md). Each translated episode also includes its original Spanish synopsis behind a disclosure. Some source synopses are short; these are episode overviews, not scene-by-scene transcripts. Machine translations can have awkward wording or mistakes; keeping the original makes them inspectable. Coverage was checked for all 1,156 entries; every plot detail has not been independently fact-checked.
 
-**Spoilers:** recaps include events from the requested episode. Movie overviews include endings. Only unlock things you have actually finished. External episode descriptions are not independently spoiler-audited and may include retrospective context. Movie viewing thresholds are cautious recommendations, not an official timeline or an absolute spoiler guarantee. The app prevents crossing its stored boundaries; the accuracy and wording of source material still matter.
-
-## Run on a Mac with Brave
+## Run on your Mac with Brave
 
 All commands below go in **Terminal**, not Brave. Press Return/Enter after each command.
 
 1. Install Apple’s tools with `xcode-select --install`. If already installed, continue.
 2. Install Homebrew using https://brew.sh and complete the shell setup commands it displays.
 3. Run `brew install pkg-config curl`.
-4. Download this repository with GitHub’s **Code → Download ZIP**. Double-click the ZIP in Finder to extract it.
-5. In Terminal, type `cd ` with the space, drag the extracted folder into Terminal, then press Return.
-6. Run `make run` and keep Terminal open.
-7. In **Brave**, press **Command+L**, enter `http://127.0.0.1:8080`, and press Return.
+4. Download the repository using GitHub’s **Code → Download ZIP**. Double-click the ZIP in Finder to extract it.
+5. In Terminal, type `cd ` with the space, drag the extracted folder into Terminal, and press Return.
+6. Run `make run`. Keep Terminal open.
+7. In **Brave**, press **Command+L**, enter `http://127.0.0.1:8080`, then press Return.
 
-The Makefile automatically selects Apple’s compiler, Homebrew curl, and an installed SDK matching the macOS major version when available. This avoids choosing an incompatible macOS 27 SDK on a macOS 26 machine. If automatic SDK selection fails on the Mac used during development, the verified workaround was:
+The Makefile selects Apple’s compiler, Homebrew curl, and an installed SDK matching your macOS major version when available. If automatic SDK selection fails on the Mac used during development, the successful workaround was:
 
 ```sh
 SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk make CXX="$(xcrun --find clang++)" run
 ```
 
-That exact workaround requires the named SDK to exist; it is not a universal setting for other Macs. The updated Makefile’s macOS branch has not been executed on a Mac in the cloud workspace.
+That command requires the named SDK; do not use that exact path on a different Mac without checking it exists. The automatic macOS Makefile branch was not executed on a Mac in the cloud workspace.
 
-To stop, press **Control+C** in Terminal. Later, open Terminal, enter the project folder, and run `make run` again.
+Stop the app with **Control+C** in Terminal. To start it later, enter the project folder and run `make run` again.
 
-### Get this update if you downloaded an earlier ZIP
+### Updating an earlier download
 
-Stop the old server with Control+C, download the new ZIP from GitHub, and extract it into a **new folder**. Do not merge it into or overwrite a folder containing your own changes or keys. Enter the new folder in Terminal and run `make run`. Refresh Brave. Browser settings are intentionally not persisted, so set your watched limit again.
+1. Stop the old server with Control+C.
+2. Download a fresh ZIP from GitHub and extract it into a **new folder**. Preserve old folders containing your own changes or keys.
+3. Enter that new folder in Terminal and run `make run`.
+4. Refresh Brave and set your watched limit again.
+
+The updated browser title says **Offline Episode Edition**, and the episode card says **All 1,156 episode summaries are onboard**. If the page still mentions a Jikan connection error, you are running the old server or old downloaded folder.
 
 ## Run on Linux / the prepared cloud environment
 
-Prerequisites: a C++17 compiler, GNU Make, pkg-config, libcurl development headers; Python 3 for tests. Debian/Ubuntu packages: `g++ make pkg-config libcurl4-openssl-dev python3`.
+Prerequisites: C++17 compiler, GNU Make, pkg-config, libcurl development headers, and Python 3 for tests. Debian/Ubuntu packages: `g++ make pkg-config libcurl4-openssl-dev python3`.
+
+From the repository root:
 
 ```sh
 make -j2
 make run
 ```
 
-Run from the repository root. The app binds **only to 127.0.0.1**, default port 8080. Change it with `PORT=8081 make run`. The cloud onboarding interface has no browser preview; local requests and browser automation can validate the server internally.
+The server binds only to **127.0.0.1**, default port 8080. Override the port with `PORT=8081 make run`. Cloud onboarding has no browser preview; local requests and browser automation validate it internally.
+
+## Using the companion
+
+- Set the **last episode you have finished**. The default is 0.
+- Open a recap at or below that limit. All 1–1156 work offline.
+- Ask the episode first mate about that recap. Its context stays in that single episode.
+- Open the **Movie Den** for original three-section overviews of all 15 theatrical films.
+- Movie summaries/chat require both the film’s recommended anime threshold and confirmation that you have watched the movie. Full movie summaries include their endings.
+
+Lowering the watched limit clears recaps and both chats. Changing movies or removing confirmation clears the movie log/chat. Late replies cannot restore content after a limit change. Browser viewing limits and conversations are not saved.
+
+Recaps contain events from the selected episode. Movie thresholds are cautious recommendations, not an official chronology or an absolute spoiler guarantee. The app gates entries by assigned episode; it cannot independently verify source wording or what you have actually watched. Specials/OVAs and the live-action series are not included in the movie list. Links to third-party reference sites may expose other story details if you open them.
 
 ## Optional ChatGPT selection
 
-Set `ONE_PIECE_API_KEY` securely in the environment before starting. On your own machine, `OPENAI_API_KEY` is also accepted. `.env` files are ignored by Git but **not automatically loaded**. Never commit real keys or put them in frontend JavaScript. A ChatGPT subscription does not include API billing.
+No API key is needed for **any episode summary, movie summary, or the labeled local fact helper**. The helper selects existing paragraphs by keywords, so it can miss questions or select an irrelevant paragraph.
 
-`ONE_PIECE_MODEL` defaults to `gpt-4.1-mini`; another model must support the OpenAI Responses API with structured JSON output. The app sends only the current question and selected episode/movie notes, not conversation history. It requests `store: false`; consult your API account’s data policies. Live calls were not tested without a credential. A failed call falls back to the local helper with a notice.
+To improve selection, securely set `ONE_PIECE_API_KEY` before starting. On your own machine, `OPENAI_API_KEY` is also recognized. `.env` files are Git-ignored but **not automatically loaded**. Never commit real keys or place them in frontend JavaScript. A ChatGPT subscription does not include API billing.
 
-The model returns **fact IDs**, not an unrestricted answer. C++ validates the IDs against the selected episode or movie and renders only stored/source text. This prevents the model from generating future-story prose, but does not fact-check the underlying text. Local matching can choose an irrelevant paragraph. Neither mode is an unrestricted chatbot, a perfect intent classifier, or a conversation-memory system.
+`ONE_PIECE_MODEL` defaults to `gpt-4.1-mini`; another model must support the OpenAI Responses API and structured JSON output. Only the current question and selected episode/movie notes are sent, not conversation history. The app requests `store: false`; consult your API account’s data policies. Live AI calls remain untested without a credential. Failed calls visibly fall back to local notes.
 
-This is a personal local application. Do not expose it publicly with an API key without authentication, rate limits, and spending controls.
+The model returns **fact IDs**, not freely written answers. The C++ server validates them against the selected episode or movie and renders only that stored text. It cannot invent future-story prose for the browser, but source inaccuracies remain possible. This is a single-question fact assistant, not a conversation-memory system.
 
-## Sources, network, and cache
+Recaps and local chat require **no network destinations**. Only optional AI calls use `api.openai.com`. Fonts and decorative SVGs are local. Old Jikan caches and the former `ONE_PIECE_CACHE_DIR` / `ONE_PIECE_EPISODE_FIXTURES` variables are no longer used.
 
-- Episode provider: `https://api.jikan.moe/v4/anime/21/episodes/{number}`. Only the requested, unlocked episode is fetched; titles/summaries from adjacent episodes are not fetched.
-- Attribution links lead to the relevant MyAnimeList episode page. Source text and embedded attribution are retained; no provider affiliation is claimed. Follow Jikan/MyAnimeList terms when using or redistributing source data.
-- Successful external responses are saved under `.cache/episodes/` (Git-ignored). Cached recaps work offline. Unsuccessful responses are not cached.
-- Upstream requests are serialized and spaced at least 1.1 seconds apart. A rate-limit response asks the user to wait instead of automatically retrying.
-- Movie overviews are original prose in `data/movies.json`, with Wikipedia links for further reading. They have not been independently fact-checked against a live movie database. Specials, OVAs, and the live-action series are not included.
-- Network destinations: `api.jikan.moe` for recaps; `api.openai.com` only for optional AI. Fonts and decorative artwork are served locally. MyAnimeList/Wikipedia links open only if clicked.
+This is a local personal app. Public hosting with a paid API key requires authentication, rate limits, and spending controls.
 
-`ONE_PIECE_CACHE_DIR` optionally overrides the cache directory. Delete cached episode files to refresh their source descriptions. Browser history/limits are not saved. `ONE_PIECE_EPISODE_FIXTURES` is a test-only operator setting selecting local synthetic source files; leave it unset for real recaps.
+## Artwork and credits
 
-## Real episode photos
+The theme uses original decorative fan-project SVGs and locally bundled OFL-licensed Pirata One and IM FELL English fonts. These are not official One Piece logo lettering or episode stills. One Piece belongs to Eiichiro Oda, Shueisha, and Toei Animation.
 
-No generated episode images or unrelated series posters are substituted for real episode stills. No verified/reusable photo source is bundled. Original entries in `data/episodes.json` still support an `images` array, with `url`, `source_url`, `credit`, `permission`, and `alt` fields. Use HTTPS and obtain the needed permission/license. Source availability on IMDb or an official site is not itself permission to reuse an image. Images appear only inside an unlocked recap. External Jikan episode descriptions do not supply episode photos.
+No unverified episode photos or unrelated posters are substituted. Entries can include an `images` array with `url`, `source_url`, `credit`, `permission`, and `alt` fields. Use HTTPS and obtain appropriate permission/license. An image appearing on IMDb or an official page is not itself permission to reuse it. The imported dataset’s image URLs have deliberately not been bundled or rendered.
 
 ## Project map
 
-- `src/main.cpp`: C++ HTTP routes, spoiler boundaries, source adapter, cache, local and optional AI selection.
-- `web/`: HTML, CSS, JavaScript, original decorative SVG symbols, local OFL-licensed fonts.
-- `data/episodes.json`: original offline notes for episodes 1–3.
-- `data/movies.json`: 15 movie overviews and viewing thresholds.
-- `tests/smoke.py`: real HTTP tests with synthetic episode-provider responses, no API credits or internet required.
-- `tests/browser_smoke.py`: optional Playwright/Chromium checks for both panels, font loading, spoiler boundaries, stale replies, movie isolation, and responsive layouts.
-- `vendor/`: pinned nlohmann/json and cpp-httplib headers and licenses. See `vendor/README.md`.
+- `src/main.cpp`: C++ HTTP routes, catalog integrity checks, spoiler boundaries, local/optional AI selection.
+- `data/episodes.json`: the complete offline episode catalog, including original Spanish source text for translated entries.
+- `data/SOURCES.md`: pinned source, attribution, translation method, and integrity hashes.
+- `data/movies.json`: 15 original movie overviews with recommended thresholds and reference links.
+- `scripts/build_episode_catalog.py`: maintenance importer; refuses incomplete catalogs instead of creating placeholders.
+- `web/`: browser UI, local fonts, original SVG artwork.
+- `tests/smoke.py`: real HTTP tests including every episode 1–1156 with network unavailable.
+- `tests/browser_smoke.py`: optional Playwright/Chromium tests, including episode 1015 from the reported bug.
+- `vendor/`: pinned nlohmann/json and cpp-httplib headers with licenses.
 
 ## Validate
 
@@ -93,10 +102,10 @@ No generated episode images or unrelated series posters are substituted for real
 make test
 ```
 
-With Python Playwright and Chromium installed, also run:
+With Python Playwright and Chromium installed:
 
 ```sh
 python3 tests/browser_smoke.py
 ```
 
-Test child processes remove API credentials and point at `tests/fixtures/episodes`. Those files are **clearly labeled synthetic data, not actual episode recaps**. Tests exercise the valid range, every future-number gate, all 15 movie gates, source mismatch/null/malformed cases, off-topic requests, and chat isolation. They do not establish live synopsis coverage or movie-plot accuracy.
+Tests strip API credentials from child processes and point HTTP(S) proxies at an unavailable local port. They exercise the **real bundled catalog** rather than synthetic episode responses, checking successful summaries for all 1,156 episodes, rejection of future requests, invalid/incomplete catalogs, off-topic questions, and isolated movie chats. They validate coverage and behavior, not every plot assertion.

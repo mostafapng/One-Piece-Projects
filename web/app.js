@@ -91,7 +91,12 @@ async function openEpisode() {
     recap.append(node('p', `EPISODE ${data.number} · THE STORY SO FAR`, 'recap-label'));
     if (data.title) recap.append(node('h4', data.title));
     recap.append(node('p', data.summary));
-    if (data.external) recap.append(node('p', 'This is an episode description from an external source. Its wording may include context beyond the episode; source descriptions are not independently spoiler-audited.', 'external-warning'));
+    if (data.translation) {
+      recap.append(node('p', data.translation, 'translation-note'));
+      const original = node('details', undefined, 'original-synopsis');
+      original.append(node('summary', 'Read the original Spanish synopsis'), node('p', data.summary_original));
+      recap.append(original);
+    }
     for (const image of data.images || []) {
       const figure = document.createElement('figure');
       const img = document.createElement('img');

@@ -24,7 +24,9 @@ class CompanionTests(unittest.TestCase):
         environment.pop('ONE_PIECE_API_KEY', None)
         environment.pop('OPENAI_API_KEY', None)
         environment['PORT'] = str(port)
-        environment['ONE_PIECE_EPISODE_FIXTURES'] = str(ROOT / 'tests/fixtures/episodes')
+        # A provider lookup would fail immediately: these tests must work offline.
+        environment['HTTPS_PROXY'] = 'http://127.0.0.1:1'
+        environment['https_proxy'] = 'http://127.0.0.1:1'
         cls.process = subprocess.Popen([str(ROOT / 'build/one-piece')], cwd=ROOT, env=environment,
                                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         for _ in range(100):
@@ -74,7 +76,7 @@ class CompanionTests(unittest.TestCase):
             data = json.load(response)
         self.assertEqual(data['episode_min'], 1)
         self.assertEqual(data['episode_max'], 1156)
-        self.assertEqual(data['offline_episodes'], [1, 2, 3])
+        self.assertEqual(data['offline_episode_count'], 1156)
         self.assertFalse(data['ai_configured'])
         self.assertNotIn('summary', data)
 
@@ -136,35 +138,60 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(self.post('/api/chat', '{invalid', raw=True)[0], 400)
         self.assertEqual(self.post('/api/chat', {'question': ['hello'], 'watched': 1})[0], 400)
 
-    def test_episode_range_and_source_adapter(self):
-        for n in [4, 100, 1156]:
+    def test_every_episode_has_an_offline_summary(self):
+        summaries = set()
+        for n in range(1, 1157):
             status, data = self.post('/api/episode', {'episode': n, 'watched': n})
-            self.assertEqual(status, 200)
+            self.assertEqual(status, 200, n)
             self.assertEqual(data['number'], n)
-            self.assertIn('SYNTHETIC TEST NOTE', data['summary'])
-            self.assertEqual(data['source'], 'MyAnimeList via Jikan')
-            self.assertTrue(data['external'])
+            self.assertTrue(data['bundled'])
+            self.assertFalse(data['external'])
+            self.assertGreater(len(data['summary'].split()), 5, n)
+            self.assertNotIn('SYNTHETIC', data['summary'])
+            self.assertNotIn('No summary', data['summary'])
+            summaries.add(data['summary'])
+        self.assertEqual(len(summaries), 1156)
         self.assertEqual(self.post('/api/episode', {'episode': 1157, 'watched': 1156})[0], 400)
 
-    def test_source_failure_never_invents_recap(self):
-        for n in [499, 500, 501, 502]:
-            status, data = self.post('/api/episode', {'episode': n, 'watched': n})
-            self.assertEqual(status, 503)
-            self.assertNotIn('summary', data)
-            self.assertNotIn('WRONG_EPISODE_SECRET', json.dumps(data))
+    def test_episode_1015_regression(self):
+        status, data = self.post('/api/episode', {'episode': 1015, 'watched': 1015})
+        self.assertEqual(status, 200)
+        self.assertIn('Luffy', data['summary'])
+        self.assertIn('Yamato', data['summary'])
+        self.assertIn('Kaido', data['summary'])
+        self.assertIn('summary_original', data)
+        self.assertIn('TMDB', data['source'])
 
-    def test_all_future_numbers_are_blocked_before_source_lookup(self):
+    def test_incomplete_or_blank_catalog_fails_at_startup(self):
+        catalog = json.loads((ROOT / 'data/episodes.json').read_text())
+        for kind in ['missing', 'blank', 'duplicate']:
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as folder:
+                changed = json.loads(json.dumps(catalog))
+                if kind == 'missing':
+                    changed.pop()
+                elif kind == 'duplicate':
+                    changed[-1]['number'] = 1
+                else:
+                    changed[1014]['summary'] = '   '
+                Path(folder, 'data').mkdir()
+                Path(folder, 'data/episodes.json').write_text(json.dumps(changed))
+                process = subprocess.run([str(ROOT / 'build/one-piece')], cwd=folder,
+                                         capture_output=True, text=True, timeout=5)
+                self.assertNotEqual(process.returncode, 0)
+                self.assertIn('Startup failed', process.stderr)
+
+    def test_future_episodes_remain_locked(self):
         for n in range(2, 1157):
             status, data = self.post('/api/episode', {'episode': n, 'watched': 1})
             self.assertEqual(status, 403, n)
             self.assertNotIn('summary', data)
 
     def test_selected_episode_chat_is_scoped(self):
-        status, data = self.post('/api/chat', {'episode': 100, 'watched': 100, 'question': 'What does Luffy explore?'})
+        status, data = self.post('/api/chat', {'episode': 100, 'watched': 100, 'question': 'What happens with Vivi?'})
         self.assertEqual(status, 200)
         self.assertTrue(data['sources'])
         self.assertTrue(all(source['episode'] == 100 for source in data['sources']))
-        self.assertNotIn('Alvida', data['answer'])
+        self.assertNotIn('Shiki', data['answer'])
         self.assertEqual(self.post('/api/chat', {'episode': 100, 'watched': 1, 'question': 'Luffy'})[0], 403)
 
     def test_movie_listing_hides_plots(self):
@@ -206,39 +233,6 @@ class CompanionTests(unittest.TestCase):
         self.assertIn("I'm built to help with One Piece", self.post('/api/movie-chat', {**base, 'question': 'Give me a summary of Naruto'})[1]['answer'])
         self.assertEqual(self.post('/api/movie', {**base, 'movie_watched': 'true'})[0], 403)
         self.assertEqual(self.post('/api/movie', {**base, 'movie': 16})[0], 404)
-
-    def test_persisted_cache_works_without_network(self):
-        with tempfile.TemporaryDirectory() as folder:
-            cached = json.loads((ROOT / 'tests/fixtures/episodes/100.json').read_text())
-            Path(folder, '100.json').write_text(json.dumps(cached))
-            with socket.socket() as sock:
-                sock.bind(('127.0.0.1', 0))
-                port = sock.getsockname()[1]
-            environment = os.environ.copy()
-            for name in ['ONE_PIECE_API_KEY', 'OPENAI_API_KEY', 'ONE_PIECE_EPISODE_FIXTURES']:
-                environment.pop(name, None)
-            environment.update(PORT=str(port), ONE_PIECE_CACHE_DIR=folder)
-            process = subprocess.Popen([str(ROOT / 'build/one-piece')], cwd=ROOT, env=environment,
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            try:
-                for _ in range(100):
-                    if process.poll() is not None:
-                        self.fail('Cache test server exited')
-                    try:
-                        urllib.request.urlopen(f'http://127.0.0.1:{port}/api/status', timeout=1).close()
-                        break
-                    except OSError:
-                        time.sleep(.05)
-                request = urllib.request.Request(f'http://127.0.0.1:{port}/api/episode',
-                    data=json.dumps({'episode': 100, 'watched': 100}).encode(),
-                    headers={'Content-Type': 'application/json'})
-                with urllib.request.urlopen(request, timeout=3) as response:
-                    data = json.load(response)
-                self.assertTrue(data['cached'])
-                self.assertIn('SYNTHETIC TEST NOTE', data['summary'])
-            finally:
-                process.terminate()
-                process.wait(timeout=5)
 
     def test_cross_origin_request_rejected(self):
         status, _ = self.post('/api/chat', {'question': 'Luffy', 'watched': 1},

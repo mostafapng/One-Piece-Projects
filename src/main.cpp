@@ -3,10 +3,6 @@
 #include <curl/curl.h>
 #include <algorithm>
 #include <cstdlib>
-#include <chrono>
-#include <filesystem>
-#include <mutex>
-#include <thread>
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -170,7 +166,8 @@ json load_catalog() {
     for (const auto& episode : catalog) {
         const int number = integer(episode, "number");
         if (number < 1 || !episodes.insert(number).second) throw std::runtime_error("Invalid or duplicate episode.");
-        episode.at("summary").get<std::string>();
+        if (episode.at("summary").get<std::string>().find_first_not_of(" \t\r\n") == std::string::npos)
+            throw std::runtime_error("Blank episode summary in offline catalog.");
         if (!episode.at("facts").is_array() || !episode.at("images").is_array()) throw std::runtime_error("Invalid episode data.");
         for (const auto& fact : episode.at("facts")) {
             if (!ids.insert(fact.at("id").get<std::string>()).second) throw std::runtime_error("Duplicate fact ID.");
@@ -186,81 +183,29 @@ json load_catalog() {
                 !std::regex_match(image.at("source_url").get<std::string>(), safe_url)) throw std::runtime_error("Images and sources require HTTPS URLs.");
         }
     }
+    if (episodes.size() != static_cast<size_t>(last_episode))
+        throw std::runtime_error("Offline catalog must contain all 1156 episodes.");
+    for (int n = 1; n <= last_episode; ++n)
+        if (!episodes.count(n)) throw std::runtime_error("Missing episode in offline catalog: " + std::to_string(n));
     return catalog;
 }
 
-// Remote content is fetched only AFTER the server checks the watched boundary.
-// Neither this cache nor the full catalogs are exposed as static files.
+// Content is bundled. No episode-provider request can fail at viewing time.
+// The full catalog is never exposed as a static asset.
 class EpisodeLibrary {
-    json local;
-    std::mutex mutex;
-    std::chrono::steady_clock::time_point last_fetch{};
-    const std::string cache = variable("ONE_PIECE_CACHE_DIR", ".cache/episodes");
-    const std::string fixtures = variable("ONE_PIECE_EPISODE_FIXTURES");
-
-    json normalize(const json& envelope, int number) {
-        const auto& data = envelope.at("data");
-        if (!data.at("mal_id").is_number_integer() || data.at("mal_id").get<int>() != number)
-            throw std::runtime_error("Episode source returned a different episode; no details shown.");
-        if (!data.contains("synopsis") || !data["synopsis"].is_string() || data["synopsis"].get<std::string>().find_first_not_of(" \n\t\r") == std::string::npos)
-            throw std::runtime_error("The episode source has no recap for this episode yet. No summary has been invented.");
-        const std::string summary = data.at("synopsis").get<std::string>();
-        if (summary.size() > 30000) throw std::runtime_error("Episode description is unexpectedly large.");
-        return {{"number", number}, {"title", data.value("title", std::string("Episode ") + std::to_string(number))},
-                {"summary", summary}, {"images", json::array()}, {"source", "MyAnimeList via Jikan"},
-                {"source_url", "https://myanimelist.net/anime/21/One_Piece/episode/" + std::to_string(number)},
-                {"external", true}};
-    }
+    const json local;
 public:
     explicit EpisodeLibrary(json catalog) : local(std::move(catalog)) {}
-    json get(int number) {
+    json get(int number) const {
+        // load_catalog verifies contiguous, unique coverage; the API validates bounds.
+        // Look up by number rather than array order so an edited catalog stays correct.
         for (const auto& episode : local) if (episode.at("number") == number) {
             json result = episode;
-            result["source"] = "Log Pose · original episode notes";
-            result["source_url"] = "";
             result["external"] = false;
+            result["bundled"] = true;
             return result;
         }
-        std::lock_guard<std::mutex> lock(mutex);
-        if (!fixtures.empty()) {
-            // Test fixtures are selected only by an operator environment variable.
-            try { return normalize(json::parse(read_file(fixtures + "/" + std::to_string(number) + ".json")), number); }
-            catch (const std::exception& e) { throw std::runtime_error(std::string("Episode source unavailable: ") + e.what()); }
-        }
-        const auto path = std::filesystem::path(cache) / (std::to_string(number) + ".json");
-        if (std::filesystem::exists(path)) {
-            try { auto result = normalize(json::parse(read_file(path.string())), number); result["cached"] = true; return result; }
-            catch (const std::exception&) { /* Ignore corrupt cache; refetch using TLS. */ }
-        }
-        // Jikan permits 60 requests/minute. No bulk scraping or unchanged retries.
-        std::this_thread::sleep_until(last_fetch + std::chrono::milliseconds(1100));
-        last_fetch = std::chrono::steady_clock::now();
-        CURL* curl = curl_easy_init();
-        if (!curl) throw std::runtime_error("Episode source could not be initialized.");
-        std::string response;
-        const std::string url = "https://api.jikan.moe/v4/anime/21/episodes/" + std::to_string(number);
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, append_response);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 7L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 18L);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "LogPose/2.0 personal episode companion");
-        const auto code = curl_easy_perform(curl);
-        long status = 0;
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-        curl_easy_cleanup(curl);
-        if (status == 429) throw std::runtime_error("The episode source is busy. Please wait a minute before trying again.");
-        if (code != CURLE_OK || status != 200) throw std::runtime_error("Could not reach the episode source. Check your internet connection and try again. Previously cached recaps still work.");
-        json envelope;
-        json result;
-        try { envelope = json::parse(response); result = normalize(envelope, number); }
-        catch (const json::exception&) { throw std::runtime_error("The episode source returned an invalid response. No details shown."); }
-        // Cache failures do not discard an otherwise valid recap.
-        std::error_code error;
-        std::filesystem::create_directories(cache, error);
-        if (!error) { std::ofstream file(path); if (file) file << envelope.dump(); }
-        result["cached"] = false;
-        return result;
+        throw std::runtime_error("Episode missing from offline catalog.");
     }
 };
 
@@ -333,8 +278,8 @@ int main() {
             return httplib::Server::HandlerResponse::Unhandled;
         });
         server.Get("/api/status", [&](const auto&, auto& res) {
-            reply(res, {{"episode_min", 1}, {"episode_max", last_episode}, {"offline_episodes", {1, 2, 3}},
-                        {"ai_configured", !key.empty()}, {"episode_source", "Jikan / MyAnimeList · internet required for uncached episodes"},
+            reply(res, {{"catalog_version", "offline-1156-v1"}, {"episode_min", 1}, {"episode_max", last_episode}, {"offline_episode_count", catalog.size()},
+                        {"ai_configured", !key.empty()}, {"episode_source", "Bundled episode catalog · no internet or API key required for recaps"},
                         {"spoiler_policy", "Episode recaps require a watched limit; movie summaries require separate confirmation."}});
         });
         server.Post("/api/episode", [&](const auto& req, auto& res) {

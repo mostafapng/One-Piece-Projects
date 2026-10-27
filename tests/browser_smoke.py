@@ -18,7 +18,8 @@ environment = os.environ.copy()
 for key in ['ONE_PIECE_API_KEY', 'OPENAI_API_KEY']:
     environment.pop(key, None)
 environment['PORT'] = str(port)
-environment['ONE_PIECE_EPISODE_FIXTURES'] = str(ROOT / 'tests/fixtures/episodes')
+environment['HTTPS_PROXY'] = 'http://127.0.0.1:1'
+environment['https_proxy'] = 'http://127.0.0.1:1'
 server = subprocess.Popen([str(ROOT / 'build/one-piece')], cwd=ROOT, env=environment, stdout=subprocess.DEVNULL)
 try:
     for _ in range(100):
@@ -57,8 +58,12 @@ try:
         expect(page.locator('#messages')).not_to_contain_text('King of the Pirates')
         page.locator('#episode').fill('1156')
         page.get_by_role('button', name='Read recap').click()
-        expect(page.locator('#episode-result')).to_contain_text('SYNTHETIC TEST NOTE')
+        expect(page.locator('#episode-result')).to_contain_text('Egghead')
         expect(page.locator('#next')).to_be_disabled()
+        page.locator('#episode').fill('1015')
+        page.get_by_role('button', name='Read recap').click()
+        expect(page.locator('#episode-result')).to_contain_text('Yamato')
+        expect(page.locator('#episode-result')).to_contain_text('Kaido')
         page.get_by_role('button', name='The Movie Den').click()
         expect(page.locator('#movie-panel')).to_be_visible()
         expect(page.locator('#episode-panel')).to_be_hidden()
@@ -113,7 +118,7 @@ try:
             page.screenshot(path=str(Path(screenshots) / 'mobile.png'), full_page=True)
         assert not errors, errors
         browser.close()
-    print('Browser checks passed: fonts, episode 1156, spoiler gates, independent movie chat, relocking, stale replies, 3 viewport widths, no JS errors.')
+    print('Browser checks passed: fonts, offline episodes 1015/1156, spoiler gates, independent movie chat, relocking, stale replies, 3 viewport widths, no JS errors.')
 finally:
     server.terminate()
     server.wait(timeout=5)
