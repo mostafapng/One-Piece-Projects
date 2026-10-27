@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Log Pose · One Piece Companion</title>
+  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/">◎ <span>LOG POSE</span></a><span class="badge">ONE PIECE COMPANION</span></header>
+  <main>
+    <section class="hero"><p class="eyebrow">YOUR ADVENTURE. YOUR PACE.</p><h1>A little guidance.<br>A grand adventure.</h1><p>Revisit the episodes you’ve seen. Ask about the story so far.<br>Keep the discoveries ahead of you a mystery.</p></section>
+    <section class="watch-panel" aria-labelledby="watch-heading">
+      <div><p class="eyebrow">SET YOUR HORIZON</p><h2 id="watch-heading">Where are you in the story?</h2><p>Enter the last episode you’ve <strong>finished</strong>. Recaps include events from that episode.</p></div>
+      <form id="watch-form"><label for="watched">Last episode finished</label><div class="input-row"><input id="watched" name="watched" type="number" min="0" max="100000" value="0" required><button type="submit">Set my limit <span aria-hidden="true">→</span></button></div></form>
+    </section>
+    <p id="limit-status" class="limit-status" role="status">Spoiler guard on · No episodes unlocked</p>
+    <div class="columns">
+      <section class="card" aria-labelledby="recap-heading"><div class="card-top"><span class="icon" aria-hidden="true">▤</span><span class="eyebrow">THE SHIP’S LOG</span></div><h2 id="recap-heading">Episode recap</h2><p>Catch up on a chapter you’ve already watched.</p>
+        <form id="episode-form"><label for="episode">Episode number</label><div class="input-row"><input id="episode" type="number" min="1" max="100000" value="1" required><button type="submit">Read recap</button></div></form>
+        <div id="episode-result" aria-live="polite"><div class="empty"><span aria-hidden="true">≋</span><p>Your log is waiting.<br>Set a watched limit, then choose an episode.</p></div></div>
+      </section>
+      <section class="card chat-card" aria-labelledby="chat-heading"><div class="card-top"><span class="icon" aria-hidden="true">◇</span><span class="eyebrow">YOUR FIRST MATE</span></div><h2 id="chat-heading">Ask about the journey</h2><p id="chat-mode">Checking companion status…</p>
+        <div id="messages" class="messages" role="log" aria-live="polite"><div class="message assistant">Welcome aboard! Set your last watched episode, then ask about One Piece. If the answer isn’t in your unlocked notes, I’ll keep it under wraps.</div></div>
+        <div class="suggestions"><button type="button" data-question="What is Luffy's dream?">Luffy’s dream</button><button type="button" data-question="What does Koby want?">Koby’s goal</button></div>
+        <form id="chat-form"><label class="sr-only" for="question">Your One Piece question</label><div class="input-row"><input id="question" type="text" maxlength="1000" placeholder="Ask about the story so far…" required autocomplete="off"><button id="send" type="submit" aria-label="Send question">↑</button></div></form>
+        <p class="small">Only unlocked catalog facts are displayed. No future-story answers.</p>
+      </section>
+    </div>
+    <footer><span>Built for the voyage, not the spoilers.</span><span>Starter catalog: episodes 1–3 · Unofficial fan project</span></footer>
+    <p id="connection-status" class="error" role="alert"></p>
+  </main>
+</body>
+</html>

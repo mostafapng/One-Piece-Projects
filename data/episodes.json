@@ -1,0 +1,33 @@
+[
+  {
+    "number": 1,
+    "summary": "Luffy meets Koby aboard Alvida's ship. Koby has been forced to work for the pirates, but dreams of joining the Marines. Luffy explains that he wants to become King of the Pirates and shows the rubber abilities he gained from a Devil Fruit. After Luffy defeats Alvida, he and Koby set off together.",
+    "facts": [
+      {"id": "e1-luffy", "keywords": ["luffy", "dream", "king", "goal", "pirate"], "text": "By episode 1, Luffy has said that his dream is to become King of the Pirates."},
+      {"id": "e1-koby", "keywords": ["koby", "coby", "marine", "dream"], "text": "In episode 1, Koby wants to join the Marines but has been forced to work aboard Alvida's ship."},
+      {"id": "e1-power", "keywords": ["rubber", "fruit", "power", "ability", "abilities", "stretch"], "text": "In episode 1, Luffy explains that eating a Devil Fruit gave his body the properties of rubber."},
+      {"id": "e1-alvida", "keywords": ["alvida", "villain", "fight", "defeat", "enemy"], "text": "In episode 1, Luffy defeats Alvida and leaves with Koby."}
+    ],
+    "images": []
+  },
+  {
+    "number": 2,
+    "summary": "Luffy and Koby arrive at a Marine base, where the swordsman Zoro is being held prisoner. They learn how Zoro protected a young girl named Rika and came into conflict with Helmeppo, Captain Morgan's son. Luffy decides he wants Zoro to join him and goes to retrieve Zoro's swords.",
+    "facts": [
+      {"id": "e2-zoro", "keywords": ["zoro", "swordsman", "prisoner", "swords"], "text": "In episode 2, Luffy finds Zoro imprisoned at a Marine base and wants him to join his crew."},
+      {"id": "e2-rika", "keywords": ["rika", "girl", "helmeppo", "zoro", "prison"], "text": "Episode 2 reveals that Zoro protected Rika and came into conflict with Helmeppo, the son of Captain Morgan."},
+      {"id": "e2-morgan", "keywords": ["morgan", "captain", "helmeppo", "base", "marine"], "text": "By episode 2, Captain Morgan commands the Marine base, and Helmeppo is his son."}
+    ],
+    "images": []
+  },
+  {
+    "number": 3,
+    "summary": "Luffy and Zoro fight the Marines at Morgan's base. Zoro agrees to join Luffy, and together they overcome Morgan. Koby stays behind to pursue his dream of becoming a Marine, while Luffy and Zoro leave to continue their journey.",
+    "facts": [
+      {"id": "e3-crew", "keywords": ["zoro", "join", "crew", "member", "luffy"], "text": "In episode 3, Zoro agrees to join Luffy's crew."},
+      {"id": "e3-morgan", "keywords": ["morgan", "fight", "defeat", "battle", "marine"], "text": "In episode 3, Luffy and Zoro overcome Captain Morgan at the Marine base."},
+      {"id": "e3-koby", "keywords": ["koby", "coby", "stay", "marine", "leave"], "text": "In episode 3, Koby stays behind to pursue becoming a Marine, while Luffy and Zoro sail away."}
+    ],
+    "images": []
+  }
+]
