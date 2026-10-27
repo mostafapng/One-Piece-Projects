@@ -1,0 +1,14 @@
+.git
+.vercel
+.env
+.env.*
+!.env.example
+build
+public
+.cache
+src
+vendor
+Makefile
+tests
+__pycache__
+**/__pycache__

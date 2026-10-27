@@ -5,3 +5,6 @@
 __pycache__/
 
 /.cache/
+/node_modules/
+/public/
+/.vercel/

@@ -1,4 +1,4 @@
-"""Real HTTP checks against an isolated C++ server; no API key or internet needed."""
+"""Legacy C++ reference tests (make test). The maintained Node/Vercel suite is npm test."""
 import json
 import os
 from pathlib import Path

@@ -1,111 +1,125 @@
-# Log Pose — a One Piece voyage
+# Log Pose — One Piece companion for Vercel
 
-A C++17 web app with a pirate-styled interface, episode recaps, a separate movie companion, and watched-episode limits.
+A pirate-themed episode and movie companion, now built with **JavaScript and Node.js 22**. It deploys to Vercel as static browser assets plus six Node.js functions. No C++ compiler, Homebrew curl, database, or always-running server is required.
 
-## Every episode is included
+The original C++ source remains available for learning, but **the supported Vercel workflow uses npm**.
 
-**All 1,156 episode summaries are bundled with the app.** Recaps no longer call Jikan, require internet, need an API key, or rely on a previously populated cache. The server checks that every episode from 1 through 1156 is present exactly once and has a nonblank summary before starting.
+## Deploy it on Vercel
 
-Episodes 1–3 retain their original English notes. Episodes 4–1156 have English translations of Spanish episode synopses originally sourced from TMDB, with English titles from MyAnimeList. The pinned dataset, translation method, and attribution are documented in [data/SOURCES.md](data/SOURCES.md). Each translated episode also includes its original Spanish synopsis behind a disclosure. Some source synopses are short; these are episode overviews, not scene-by-scene transcripts. Machine translations can have awkward wording or mistakes; keeping the original makes them inspectable. Coverage was checked for all 1,156 entries; every plot detail has not been independently fact-checked.
+1. Open [Vercel](https://vercel.com) and sign in with GitHub.
+2. Choose **Add New → Project** and import **mostafapng/One-Piece-Projects**. If it is not listed, give the Vercel GitHub integration access to that repository.
+3. Use the repository root as the **Root Directory**. The included `vercel.json` supplies the settings below; keep them as configured.
+4. Leave environment variables empty for the free local fact helper, then click **Deploy**.
+5. Open the website URL Vercel gives you in Brave or any other modern browser. You no longer need to keep Terminal running.
 
-## Run on your Mac with Brave
+| Setting | Value |
+| --- | --- |
+| Framework preset | Other |
+| Root directory | Repository root (`.`), not `web` or `api` |
+| Install command | `npm ci` |
+| Build command | `npm run build` |
+| Output directory | `public` |
+| Node.js version | 22.x, selected by `package.json` |
 
-All commands below go in **Terminal**, not Brave. Press Return/Enter after each command.
+All episode summaries, movie summaries, and the local question helper work **without an API key**. After importing the GitHub repository, future pushes to its production branch normally trigger a new Vercel deployment. No Vercel project or live deployment is created just by running `npm run build`.
 
-1. Install Apple’s tools with `xcode-select --install`. If already installed, continue.
-2. Install Homebrew using https://brew.sh and complete the shell setup commands it displays.
-3. Run `brew install pkg-config curl`.
-4. Download the repository using GitHub’s **Code → Download ZIP**. Double-click the ZIP in Finder to extract it.
-5. In Terminal, type `cd ` with the space, drag the extracted folder into Terminal, and press Return.
-6. Run `make run`. Keep Terminal open.
-7. In **Brave**, press **Command+L**, enter `http://127.0.0.1:8080`, then press Return.
+## What is included
 
-The Makefile selects Apple’s compiler, Homebrew curl, and an installed SDK matching your macOS major version when available. If automatic SDK selection fails on the Mac used during development, the successful workaround was:
+- **All 1,156 bundled episode summaries**, available without an external episode service.
+- Original English notes for episodes 1–3; English translations/adaptations of Spanish source synopses for 4–1156, with the Spanish originals available for reference.
+- A **watched-episode limit** checked on the server for every recap/chat request.
+- Episode chat restricted to the selected recap, with a labeled keyword-based helper and optional ChatGPT selection.
+- A separate **Movie Den** with original three-section summaries of all **15 theatrical films**, recommended anime thresholds, a watched-movie confirmation, and an isolated movie chat.
+- The existing parchment, ocean-blue, gold, and pirate-font theme, with local fonts and original decorative SVG artwork.
 
-```sh
-SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk make CXX="$(xcrun --find clang++)" run
-```
+The catalog is bundled in server functions, not copied into public assets. The browser receives only the requested episode or confirmed movie. Changing a watched limit clears visible content and invalidates late replies; changing movies clears the movie conversation. Limits are viewing preferences, not account permissions: users can change their own limit.
 
-That command requires the named SDK; do not use that exact path on a different Mac without checking it exists. The automatic macOS Makefile branch was not executed on a Mac in the cloud workspace.
+Recaps include the selected episode's events, and movie overviews include endings. Source wording and machine translations can contain mistakes; not every plot detail has been independently audited. Movie thresholds are cautious recommendations, not an official timeline or a complete spoiler guarantee. Sources and translation provenance are in [data/SOURCES.md](data/SOURCES.md). External reference links may reveal other story details if opened.
 
-Stop the app with **Control+C** in Terminal. To start it later, enter the project folder and run `make run` again.
+## Optional paid ChatGPT selection
 
-### Updating an earlier download
+For a public deployment, an API key by itself **does not enable paid requests**. Set both of these in **Vercel → Project → Settings → Environment Variables**, then redeploy:
 
-1. Stop the old server with Control+C.
-2. Download a fresh ZIP from GitHub and extract it into a **new folder**. Preserve old folders containing your own changes or keys.
-3. Enter that new folder in Terminal and run `make run`.
-4. Refresh Brave and set your watched limit again.
+| Variable | Purpose |
+| --- | --- |
+| `ONE_PIECE_API_KEY` | Your private OpenAI API key; kept only on the server |
+| `ONE_PIECE_AI_ACCESS_CODE` | A private access code of at least 16 characters that you choose |
+| `ONE_PIECE_MODEL` | Optional model override; defaults to `gpt-4.1-mini` |
 
-The updated browser title says **Offline Episode Edition**, and the episode card says **All 1,156 episode summaries are onboard**. If the page still mentions a Jikan connection error, you are running the old server or old downloaded folder.
+Select the deployment environments where you want them available. Redeploy after changing variables. Do not add a `NEXT_PUBLIC_`, `VITE_`, or other public prefix to the key. Never enter or commit real keys in source, frontend JavaScript, GitHub, or chat. `OPENAI_API_KEY` is also recognized by the Node backend, but the documented project setting is `ONE_PIECE_API_KEY`.
 
-## Run on Linux / the prepared cloud environment
+When both required settings exist, an **Optional ChatGPT access** field appears on the website. Enter the private access code there—not your API key. The code stays in the current tab's memory and is not saved to local/session storage. Without a correct code, visitors use the free local helper and cannot cause a paid API request through these endpoints. A ChatGPT subscription does not include API billing.
 
-Prerequisites: C++17 compiler, GNU Make, pkg-config, libcurl development headers, and Python 3 for tests. Debian/Ubuntu packages: `g++ make pkg-config libcurl4-openssl-dev python3`.
+The code is a shared-secret gate, not individual accounts or a distributed rate limiter. Share it only with people you want to authorize, use OpenAI project spending controls, and use Vercel deployment protection if the whole site should be private. The app imposes a 20-second upstream timeout and a small output-token budget; those are not spending limits.
 
-From the repository root:
+The model only selects fact IDs from the selected episode or movie. The backend validates the IDs and displays stored text, never unrestricted model prose. Failed AI calls fall back to the local helper with a notice. The current question and selected notes are sent to OpenAI, not chat history, with `store: false`. Consult your API account's data policies. Live paid calls have not been tested without a credential; adapter behavior is tested with mocked responses.
 
-```sh
-make -j2
-make run
-```
+## Run locally on your Mac
 
-The server binds only to **127.0.0.1**, default port 8080. Override the port with `PORT=8081 make run`. Cloud onboarding has no browser preview; local requests and browser automation validate it internally.
+Install **Node.js 22 LTS** from [nodejs.org](https://nodejs.org), or use an existing version manager with the included `.nvmrc`.
 
-## Using the companion
-
-- Set the **last episode you have finished**. The default is 0.
-- Open a recap at or below that limit. All 1–1156 work offline.
-- Ask the episode first mate about that recap. Its context stays in that single episode.
-- Open the **Movie Den** for original three-section overviews of all 15 theatrical films.
-- Movie summaries/chat require both the film’s recommended anime threshold and confirmation that you have watched the movie. Full movie summaries include their endings.
-
-Lowering the watched limit clears recaps and both chats. Changing movies or removing confirmation clears the movie log/chat. Late replies cannot restore content after a limit change. Browser viewing limits and conversations are not saved.
-
-Recaps contain events from the selected episode. Movie thresholds are cautious recommendations, not an official chronology or an absolute spoiler guarantee. The app gates entries by assigned episode; it cannot independently verify source wording or what you have actually watched. Specials/OVAs and the live-action series are not included in the movie list. Links to third-party reference sites may expose other story details if you open them.
-
-## Optional ChatGPT selection
-
-No API key is needed for **any episode summary, movie summary, or the labeled local fact helper**. The helper selects existing paragraphs by keywords, so it can miss questions or select an irrelevant paragraph.
-
-To improve selection, securely set `ONE_PIECE_API_KEY` before starting. On your own machine, `OPENAI_API_KEY` is also recognized. `.env` files are Git-ignored but **not automatically loaded**. Never commit real keys or place them in frontend JavaScript. A ChatGPT subscription does not include API billing.
-
-`ONE_PIECE_MODEL` defaults to `gpt-4.1-mini`; another model must support the OpenAI Responses API and structured JSON output. Only the current question and selected episode/movie notes are sent, not conversation history. The app requests `store: false`; consult your API account’s data policies. Live AI calls remain untested without a credential. Failed calls visibly fall back to local notes.
-
-The model returns **fact IDs**, not freely written answers. The C++ server validates them against the selected episode or movie and renders only that stored text. It cannot invent future-story prose for the browser, but source inaccuracies remain possible. This is a single-question fact assistant, not a conversation-memory system.
-
-Recaps and local chat require **no network destinations**. Only optional AI calls use `api.openai.com`. Fonts and decorative SVGs are local. Old Jikan caches and the former `ONE_PIECE_CACHE_DIR` / `ONE_PIECE_EPISODE_FIXTURES` variables are no longer used.
-
-This is a local personal app. Public hosting with a paid API key requires authentication, rate limits, and spending controls.
-
-## Artwork and credits
-
-The theme uses original decorative fan-project SVGs and locally bundled OFL-licensed Pirata One and IM FELL English fonts. These are not official One Piece logo lettering or episode stills. One Piece belongs to Eiichiro Oda, Shueisha, and Toei Animation.
-
-No unverified episode photos or unrelated posters are substituted. Entries can include an `images` array with `url`, `source_url`, `credit`, `permission`, and `alt` fields. Use HTTPS and obtain appropriate permission/license. An image appearing on IMDb or an official page is not itself permission to reuse it. The imported dataset’s image URLs have deliberately not been bundled or rendered.
-
-## Project map
-
-- `src/main.cpp`: C++ HTTP routes, catalog integrity checks, spoiler boundaries, local/optional AI selection.
-- `data/episodes.json`: the complete offline episode catalog, including original Spanish source text for translated entries.
-- `data/SOURCES.md`: pinned source, attribution, translation method, and integrity hashes.
-- `data/movies.json`: 15 original movie overviews with recommended thresholds and reference links.
-- `scripts/build_episode_catalog.py`: maintenance importer; refuses incomplete catalogs instead of creating placeholders.
-- `web/`: browser UI, local fonts, original SVG artwork.
-- `tests/smoke.py`: real HTTP tests including every episode 1–1156 with network unavailable.
-- `tests/browser_smoke.py`: optional Playwright/Chromium tests, including episode 1015 from the reported bug.
-- `vendor/`: pinned nlohmann/json and cpp-httplib headers with licenses.
-
-## Validate
+In **Terminal**, enter your downloaded project folder, then run these one at a time:
 
 ```sh
-make test
+npm ci
+npm run dev
 ```
 
-With Python Playwright and Chromium installed:
+In Brave, press **Command+L**, enter `http://127.0.0.1:8080`, and press Return. Stop the server with **Control+C**. Change the local port with `PORT=8081 npm run dev`.
+
+No Xcode SDK configuration or C++ compilation is needed. If you have an old C++ server running on port 8080, stop it before starting this version. Local settings can be exported in the shell. Alternatively, create an ignored `.env` file based on `.env.example` and use:
 
 ```sh
-python3 tests/browser_smoke.py
+node --env-file=.env scripts/dev-server.js
 ```
 
-Tests strip API credentials from child processes and point HTTP(S) proxies at an unavailable local port. They exercise the **real bundled catalog** rather than synthetic episode responses, checking successful summaries for all 1,156 episodes, rejection of future requests, invalid/incomplete catalogs, off-topic questions, and isolated movie chats. They validate coverage and behavior, not every plot assertion.
+`npm run dev` does not automatically load `.env`. Vercel injects the variables from its project settings.
+
+## Build and test
+
+```sh
+npm ci
+npm run build
+npm test
+```
+
+The application has **no third-party npm runtime dependencies**. The lockfile is checked in for repeatable installs. The build validates the complete episode/movie catalog and copies only allowlisted frontend files into `public/`. Raw catalogs, `.env` files, C++ files, and server code are never copied there.
+
+Tests exercise all 1,156 episode requests, future-episode rejection, all movie gates, per-movie chat isolation, invalid/oversized input, HTTPS same-origin handling, pre-parsed Vercel request bodies, AI access-code protection, invalid model IDs, and safe public output. No paid API calls are made by tests.
+
+Optional real-browser checks require Python Playwright and Chromium:
+
+```sh
+npm run test:browser
+```
+
+These start the Node server and check the real UI, episodes 1015/1156, local chat, independent movie chat, changing limits, late replies, local fonts, access-code UI, and three viewport sizes.
+
+## How deployment is structured
+
+| Location | Role |
+| --- | --- |
+| `web/` | Editable HTML, CSS, JavaScript, fonts, and decorative artwork |
+| `public/` | Generated static output; ignored by Git |
+| `api/*.js` | Six Vercel function entrypoints |
+| `lib/http.js` | Shared HTTP validation, origin checks, and API behavior |
+| `lib/catalog.js` | Server-side catalog loading and integrity checks |
+| `lib/chat.js` | Local matching, private AI access, and bounded fact selection |
+| `data/` | Bundled episode/movie content and provenance; never a public static folder |
+| `scripts/build-web.js` | Validates data and prepares the static output |
+| `scripts/dev-server.js` | Local adapter for the same function handlers |
+| `vercel.json` | Static output, function data inclusion, timeouts, and response headers |
+
+Each serverless request contains its own watched limit and selection. No state is kept in a shared server process, no writable filesystem is required, and cold starts reload the bundled catalog. Recaps never call Jikan or another live episode provider. Only optional AI calls use `api.openai.com`.
+
+The six endpoints remain `/api/status`, `/api/episode`, `/api/chat`, `/api/movies`, `/api/movie`, and `/api/movie-chat`. Public output is separate from function data, and `includeFiles: data/**` explicitly retains the catalogs in every function bundle.
+
+## Original C++ version
+
+`src/main.cpp`, `vendor/`, `Makefile`, and `tests/smoke.py` are retained as the original C++ reference. It is not used by Vercel or the npm workflow. Its older local-only AI configuration does not provide the new deployment access-code gate, so do not expose that legacy server publicly with a paid key. For C++ study, its local build still uses `make`; the Node version is the maintained app for this deployment.
+
+## Attribution and images
+
+One Piece belongs to Eiichiro Oda, Shueisha, and Toei Animation. This is an unofficial fan project. Source dataset and translation credits are in [data/SOURCES.md](data/SOURCES.md); font licenses are retained in `web/fonts/`.
+
+No unverified episode photos or unrelated posters are substituted for real stills. Original entries support HTTPS images with source, credit, permission, and alt text. Obtain the needed permission/license before adding photos. The imported source dataset's image URLs are not rendered by this project.

@@ -20,7 +20,7 @@ for key in ['ONE_PIECE_API_KEY', 'OPENAI_API_KEY']:
 environment['PORT'] = str(port)
 environment['HTTPS_PROXY'] = 'http://127.0.0.1:1'
 environment['https_proxy'] = 'http://127.0.0.1:1'
-server = subprocess.Popen([str(ROOT / 'build/one-piece')], cwd=ROOT, env=environment, stdout=subprocess.DEVNULL)
+server = subprocess.Popen([os.environ.get('NODE_BINARY', 'node'), str(ROOT / 'scripts/dev-server.js')], cwd=ROOT, env=environment, stdout=subprocess.DEVNULL)
 try:
     for _ in range(100):
         if server.poll() is not None:
@@ -38,6 +38,7 @@ try:
         page.on('console', lambda msg: errors.append(msg.text) if msg.type == 'error' and 'Content Security Policy' in msg.text else None)
         page.goto(base)
         expect(page.locator('#chat-mode')).to_contain_text('Local fact helper')
+        expect(page.locator('#ai-settings')).to_be_hidden()
         page.evaluate('document.fonts.ready')
         assert page.evaluate('document.fonts.check(\'24px "Pirata"\')'), 'Pirate font not loaded'
         page.get_by_role('button', name='Read recap').click()
@@ -116,6 +117,28 @@ try:
         page.set_viewport_size({'width': 390, 'height': 844})
         if screenshots:
             page.screenshot(path=str(Path(screenshots) / 'mobile.png'), full_page=True)
+        # The owner access code is sent in a request header, never stored in browser storage.
+        page.route('**/api/status', lambda route: route.fulfill(status=200, content_type='application/json', body=json.dumps({'ai_configured': True})))
+        page.reload()
+        expect(page.locator('#ai-settings')).to_be_visible()
+        page.locator('#ai-settings summary').click()
+        page.locator('#ai-access-code').fill('test-private-code-123456')
+        page.locator('#watched').fill('1')
+        page.get_by_role('button', name='Set my limit').click()
+        page.locator('#episode').fill('1')
+        page.get_by_role('button', name='Read recap').click()
+        expect(page.locator('#episode-result')).to_contain_text('Alvida')
+        sent_headers = []
+        def capture_chat(route):
+            sent_headers.append(route.request.headers)
+            route.fulfill(status=200, content_type='application/json', body=json.dumps({'answer': 'Selected episode notes', 'sources': [], 'mode': 'local'}))
+        page.route('**/api/chat', capture_chat)
+        page.locator('#question').fill('Luffy')
+        page.get_by_role('button', name='Send question', exact=True).click()
+        expect(page.locator('#messages')).to_contain_text('Selected episode notes')
+        assert sent_headers[0]['x-companion-access-code'] == 'test-private-code-123456'
+        assert page.evaluate('localStorage.length') == 0
+        assert page.evaluate('sessionStorage.length') == 0
         assert not errors, errors
         browser.close()
     print('Browser checks passed: fonts, offline episodes 1015/1156, spoiler gates, independent movie chat, relocking, stale replies, 3 viewport widths, no JS errors.')

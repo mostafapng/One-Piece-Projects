@@ -17,7 +17,10 @@ function node(tag, text, className) {
   return element;
 }
 async function post(path, body) {
-  const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const headers = { 'Content-Type': 'application/json' };
+  const accessCode = $('ai-access-code').value;
+  if (accessCode) headers['X-Companion-Access-Code'] = accessCode;
+  const response = await fetch(path, { method: 'POST', headers, body: JSON.stringify(body) });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'The ship’s radio lost its signal. Please try again.');
   return data;
@@ -79,7 +82,7 @@ async function openEpisode() {
   const button = $('episode-form').querySelector('button');
   button.disabled = true;
   $('episode-pager').hidden = true;
-  // Clear stale chat immediately, even when the new source is unavailable.
+  // Clear stale chat immediately when opening another episode.
   resetEpisode();
   $('episode-result').replaceChildren(node('p', 'Unrolling your episode log…', 'loading'));
   try {
@@ -216,7 +219,7 @@ for (const button of document.querySelectorAll('[data-movie-question]')) button.
 async function initialize() {
   try {
     const [statusResponse, movieResponse] = await Promise.all([fetch('/api/status'), fetch('/api/movies')]);
-    if (!statusResponse.ok || !movieResponse.ok) throw new Error('Could not load the ship’s logs. Check that the C++ server is running.');
+    if (!statusResponse.ok || !movieResponse.ok) throw new Error('Could not load the ship’s logs. Check that the site or local server is running.');
     const status = await statusResponse.json();
     movies = (await movieResponse.json()).movies;
     for (const movie of movies) {
@@ -224,7 +227,8 @@ async function initialize() {
       option.value = String(movie.id);
       $('movie').append(option);
     }
-    $('chat-mode').textContent = status.ai_configured ? 'ChatGPT selection configured · only unlocked notes are displayed.' : 'Local fact helper · no API key needed to set sail.';
+    $('ai-settings').hidden = !status.ai_configured;
+    $('chat-mode').textContent = status.ai_configured ? 'ChatGPT available with an access code · otherwise the local helper answers.' : 'Local fact helper · no API key needed to set sail.';
   } catch (error) { $('connection-status').textContent = error.message; }
 }
 initialize();
